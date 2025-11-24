@@ -43,6 +43,37 @@ export function useSupabaseGame(width: number, height: number) {
             setStatus(newData.status);
           }
         }
+
+        // Handle opponent shot replay
+        if (newData.last_shot_vector && !isSimulating) {
+          const { ballId, x, y, power } = newData.last_shot_vector;
+          // Check if this ball belongs to opponent
+          // We need to access current state to check ball owner, but we can assume
+          // if we receive a shot vector and it's NOT our turn (or just generally), we should replay it if we haven't yet.
+          // Actually, simpler: if the ball belongs to the player who is NOT us.
+          // But we don't have easy access to ball owner here without looking up in gameState.
+          // Let's rely on the fact that we only send last_shot_vector when we shoot.
+          // So if we receive one, and we didn't just send it...
+          // But we receive our own updates too!
+          // We need to filter out our own shots.
+          // The payload doesn't say who sent it.
+          // But we know `playerId`.
+          // We can check if `current_turn` (from DB) matches `playerId`.
+          // If `current_turn` is US, then the PREVIOUS turn was opponent.
+          // Wait, `last_shot_vector` is updated at the START of the shot.
+          // So `current_turn` is still the shooter.
+          // So if `newData.current_turn` !== `playerId`, it means opponent is shooting.
+          
+          // However, `current_turn` might update LATER in the simulation.
+          // Let's try: if the ball being shot belongs to the opponent.
+          if (gameState) {
+            const ball = gameState.balls.find(b => b.id === ballId);
+            if (ball && ball.player !== playerId) {
+               // It's an opponent's ball. Replay it!
+               shoot(ballId, { x, y }, power);
+            }
+          }
+        }
       })
       .subscribe();
 
