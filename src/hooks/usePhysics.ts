@@ -14,10 +14,16 @@ export function usePhysics(width: number, height: number) {
   const stateRef = useRef<GameState | null>(null);
 
   useEffect(() => {
-    engine.current = new GameEngine(width, height);
-    const initialState = engine.current.initGame();
-    setGameState(initialState);
-    stateRef.current = initialState;
+    // Only init once
+    if (!stateRef.current) {
+      engine.current = new GameEngine(width, height);
+      const initialState = engine.current.initGame();
+      setGameState(initialState);
+      stateRef.current = initialState;
+    } else {
+      // Just resize
+      engine.current.resize(width, height);
+    }
   }, [width, height]);
 
   const simulateStep = useCallback(() => {
