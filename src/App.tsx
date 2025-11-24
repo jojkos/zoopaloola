@@ -1,0 +1,220 @@
+import { useState, useEffect } from 'react';
+import { GameCanvas } from './components/GameCanvas';
+import { GameUI } from './components/GameUI';
+import { Lobby } from './components/Lobby';
+import { useLocalGame } from './hooks/useLocalGame';
+import { useSupabaseGame } from './hooks/useSupabaseGame';
+import { audio } from './services/audio';
+
+function App() {
+  const [mode, setMode] = useState<'menu' | 'local' | 'online'>('menu');
+  const [pendingAction, setPendingAction] = useState<{ type: 'create' } | { type: 'join', gameId: string } | null>(null);
+  const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
+
+  // Handle resize
+  // Handle resize
+  useEffect(() => {
+    const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', handleResize);
+    
+    // Check for active session
+    const savedGameId = localStorage.getItem('zoopaloola_game_id');
+    if (savedGameId) {
+      setMode('online');
+    }
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Initialize audio on first interaction
+  const initAudio = () => {
+    audio.init();
+  };
+
+  return (
+    <div className="w-full h-screen overflow-hidden bg-slate-900" onClick={initAudio} role="button" tabIndex={0}>
+      {mode === 'menu' && (
+        <Lobby
+          onCreateGame={async () => {
+            setPendingAction({ type: 'create' });
+            setMode('online');
+            return '';
+          }}
+          onJoinGame={async (id) => {
+            setPendingAction({ type: 'join', gameId: id });
+            setMode('online');
+          }}
+          onStartLocal={() => setMode('local')}
+          isCreating={false}
+          isJoining={false}
+          error={null}
+        />
+      )}
+
+      {mode === 'local' && (
+        <LocalGameWrapper 
+          width={dimensions.width} 
+          height={dimensions.height} 
+          onExit={() => setMode('menu')} 
+        />
+      )}
+
+      {mode === 'online' && (
+        <OnlineGameWrapper 
+          width={dimensions.width} 
+          height={dimensions.height} 
+          onExit={() => setMode('menu')}
+          initialAction={pendingAction}
+        />
+      )}
+    </div>
+  );
+}
+
+const LocalGameWrapper = ({ width, height, onExit }: { width: number, height: number, onExit: () => void }) => {
+  const { gameState, onShoot } = useLocalGame(width, height);
+
+  if (!gameState) return <div>Loading...</div>;
+
+  return (
+    <>
+      <GameCanvas
+        gameState={gameState}
+        playerId={gameState.turn} // In local mode, we are always the active player
+        onShoot={onShoot}
+        width={width}
+        height={height}
+      />
+      <GameUI
+        gameState={gameState}
+        playerId={gameState.turn}
+        onReset={onExit}
+      />
+      <button 
+        onClick={onExit}
+        className="absolute top-4 left-4 bg-white/20 hover:bg-white/30 text-white p-2 rounded-full backdrop-blur z-50"
+      >
+        🏠
+      </button>
+    </>
+  );
+};
+
+interface OnlineGameWrapperProps {
+  width: number;
+  height: number;
+  onExit: () => void;
+  initialAction: { type: 'create' } | { type: 'join', gameId: string } | null;
+}
+
+const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameWrapperProps) => {
+  const { 
+    gameState, 
+    createGame, 
+    joinGame, 
+    onShoot, 
+    playerId, 
+    status, 
+    error,
+    isSimulating
+  } = useSupabaseGame(width, height);
+
+  const [lobbyState, setLobbyState] = useState<'initial' | 'creating' | 'joining' | 'playing'>('initial');
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  // Handle initial action
+  useEffect(() => {
+    if (hasInitialized || !initialAction) return;
+
+    const init = async () => {
+      setHasInitialized(true);
+      if (initialAction.type === 'create') {
+        await handleCreate();
+      } else if (initialAction.type === 'join') {
+        setLobbyState('joining');
+        // Pre-fill the join ID in the lobby or auto-join?
+        // Auto-join seems better if they clicked "Join" with an ID.
+        await joinGame(initialAction.gameId);
+      }
+    };
+    init();
+  }, [initialAction, hasInitialized]);
+
+  const handleCreate = async () => {
+    setLobbyState('creating');
+    const id = await createGame();
+    if (id) {
+      setCreatedId(id);
+      return id;
+    } else {
+      setLobbyState('initial');
+      return null;
+    }
+  };
+
+  const handleJoin = async (id: string) => {
+    setLobbyState('joining');
+    await joinGame(id);
+  };
+
+  if (status === 'idle' || status === 'waiting') {
+    return (
+      <Lobby
+        onCreateGame={async () => {
+          const id = await handleCreate();
+          return id || '';
+        }}
+        onJoinGame={handleJoin}
+        onStartLocal={onExit} // Go back
+        isCreating={lobbyState === 'creating'}
+        isJoining={lobbyState === 'joining'}
+        error={error}
+        gameId={createdId}
+      />
+    );
+  }
+
+  if (!gameState || !playerId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-white">
+        <div className="text-2xl font-bold mb-4">Načítání hry...</div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+        <button 
+          onClick={() => {
+            localStorage.removeItem('zoopaloola_game_id');
+            localStorage.removeItem('zoopaloola_player_id');
+            window.location.reload();
+          }}
+          className="mt-8 text-sm text-slate-400 hover:text-white underline"
+        >
+          Zrušit a vrátit se zpět
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <GameCanvas
+        gameState={gameState}
+        playerId={playerId}
+        onShoot={onShoot}
+        width={width}
+        height={height}
+      />
+      <GameUI
+        gameState={gameState}
+        playerId={playerId}
+        onReset={onExit}
+      />
+      {isSimulating && (
+        <div className="absolute top-4 right-4 text-white bg-black/50 px-2 rounded">
+          Syncing...
+        </div>
+      )}
+    </>
+  );
+};
+
+export default App;
