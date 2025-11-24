@@ -45,8 +45,8 @@ export class GameEngine {
     this.bounds = {
       width: w,
       height: h,
-      cx: width / 2,
-      cy: height / 2,
+      cx: 0, // Center is always 0,0
+      cy: 0,
       rx: w / 2,
       ry: h / 2
     };
@@ -122,7 +122,8 @@ export class GameEngine {
       walls: this.walls,
       turn: 1,
       scores: { p1: 7, p2: 7 },
-      status: 'playing'
+      status: 'playing',
+      winner: undefined
     };
   }
 
@@ -136,19 +137,12 @@ export class GameEngine {
     this.bounds = {
       width: w,
       height: h,
-      cx: width / 2,
-      cy: height / 2,
+      cx: 0, // Keep center at 0,0
+      cy: 0,
       rx: w / 2,
       ry: h / 2
     };
 
-    // Note: We are NOT moving balls or walls here to avoid disrupting the game state.
-    // They will just be relative to the new center if we re-render, 
-    // but their absolute positions in physics engine remain as is.
-    // Actually, if the window resizes, the canvas resizes, so the "center" moves.
-    // We should probably shift everything relative to the new center?
-    // For now, let's just update bounds so physics doesn't break.
-    // Ideally, we'd scale positions, but that's complex.
     this.createWalls(); // Recreate walls based on new bounds
   }
 

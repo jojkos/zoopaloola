@@ -36,6 +36,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       // Clear
       ctx.clearRect(0, 0, width, height);
 
+      // Translate to center
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+
       // Draw Island & Water
       drawIsland(ctx, width, height, waterOffset);
 
@@ -49,6 +53,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       if (isDragging && selectedBall && dragCurrent) {
         drawAim(ctx, selectedBall.pos, dragCurrent);
       }
+
+      ctx.restore();
 
       setWaterOffset(prev => prev + 0.05);
       animationFrameId = requestAnimationFrame(render);
@@ -64,7 +70,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const r = canvas.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    return { x: clientX - r.left, y: clientY - r.top };
+    
+    // Map to centered coordinates
+    return { 
+      x: clientX - r.left - width / 2, 
+      y: clientY - r.top - height / 2 
+    };
   };
 
   const handleDown = (e: React.MouseEvent | React.TouchEvent) => {
@@ -139,16 +150,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 function drawIsland(ctx: CanvasRenderingContext2D, w: number, h: number, offset: number) {
   // Water
   ctx.fillStyle = '#2b6cb0';
-  ctx.fillRect(0, 0, w, h);
+  // Fill relative to center
+  ctx.fillRect(-w/2, -h/2, w, h);
   
   // Waves
   ctx.strokeStyle = '#4299e1';
   ctx.lineWidth = 3;
   ctx.beginPath();
-  for (let y = 0; y < h; y += 50) {
+  for (let y = -h/2; y < h/2; y += 50) {
     const shift = Math.sin((y + offset) * 0.04) * 25;
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y + shift);
+    ctx.moveTo(-w/2, y);
+    ctx.lineTo(w/2, y + shift);
   }
   ctx.stroke();
 
@@ -157,8 +169,8 @@ function drawIsland(ctx: CanvasRenderingContext2D, w: number, h: number, offset:
   const maxWidth = 800;
   const islandW = Math.min(w - padding, maxWidth);
   const islandH = Math.min(h - padding, islandW * 0.7);
-  const cx = w / 2;
-  const cy = h / 2;
+  const cx = 0;
+  const cy = 0;
   const rx = islandW / 2;
   const ry = islandH / 2;
 

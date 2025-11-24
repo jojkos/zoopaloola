@@ -82,9 +82,17 @@ export function usePhysics(width: number, height: number) {
     requestRef.current = requestAnimationFrame(simulateStep);
   }, [simulateStep]);
 
+  const setGameStateAndRef = useCallback((newState: GameState | ((prev: GameState | null) => GameState | null) | null) => {
+    setGameState(prev => {
+      const next = typeof newState === 'function' ? newState(prev) : newState;
+      stateRef.current = next;
+      return next;
+    });
+  }, []);
+
   return {
     gameState,
-    setGameState, // Exposed for syncing
+    setGameState: setGameStateAndRef, // Exposed for syncing
     shoot,
     isSimulating: isSimulating.current
   };

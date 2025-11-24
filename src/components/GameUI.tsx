@@ -7,7 +7,7 @@ interface GameUIProps {
   onReset: () => void;
 }
 
-export const GameUI: React.FC<GameUIProps> = ({ gameState, onReset }) => {
+export const GameUI: React.FC<GameUIProps> = ({ gameState, playerId, onReset }) => {
   const { scores, turn, status, winner } = gameState;
 
   return (
@@ -41,7 +41,7 @@ export const GameUI: React.FC<GameUIProps> = ({ gameState, onReset }) => {
             {turn === 1 ? 'Tah Tučňáků' : 'Tah Opic'}
           </div>
           <div className="text-sm opacity-75 font-sans font-bold">
-            (Jsi na řadě)
+            {turn === playerId ? '(Jsi na řadě)' : '(Čekání na soupeře...)'}
           </div>
         </div>
 
