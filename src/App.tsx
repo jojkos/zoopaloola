@@ -5,6 +5,7 @@ import { Lobby } from './components/Lobby';
 import { useLocalGame } from './hooks/useLocalGame';
 import { useSupabaseGame } from './hooks/useSupabaseGame';
 import { audio } from './services/audio';
+import { supabase } from './services/supabase';
 
 function App() {
   const [mode, setMode] = useState<'menu' | 'local' | 'online'>('menu');
@@ -125,16 +126,20 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
 
   // Handle initial action
   useEffect(() => {
-    if (hasInitialized || !initialAction) return;
-
     const init = async () => {
+      // Ensure auth
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        await supabase.auth.signInAnonymously();
+      }
+
+      if (hasInitialized || !initialAction) return;
+      
       setHasInitialized(true);
       if (initialAction.type === 'create') {
         await handleCreate();
       } else if (initialAction.type === 'join') {
         setLobbyState('joining');
-        // Pre-fill the join ID in the lobby or auto-join?
-        // Auto-join seems better if they clicked "Join" with an ID.
         await joinGame(initialAction.gameId);
       }
     };
@@ -156,6 +161,12 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
   const handleJoin = async (id: string) => {
     setLobbyState('joining');
     await joinGame(id);
+  };
+
+  const handleExit = () => {
+    localStorage.removeItem('zoopaloola_game_id');
+    localStorage.removeItem('zoopaloola_player_id');
+    onExit();
   };
 
   if (status === 'idle' || status === 'waiting') {
@@ -206,8 +217,17 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
       <GameUI
         gameState={gameState}
         playerId={playerId}
-        onReset={onExit}
+        onReset={handleExit}
       />
+      
+      {/* Leave Game Button */}
+      <button 
+        onClick={handleExit}
+        className="absolute top-4 left-4 bg-red-500/80 hover:bg-red-600 text-white px-4 py-2 rounded-full backdrop-blur z-50 font-bold shadow-lg transition-transform active:scale-95"
+      >
+        OPUSTIT HRU
+      </button>
+
       {isSimulating && (
         <div className="absolute top-4 right-4 text-white bg-black/50 px-2 rounded">
           Syncing...
