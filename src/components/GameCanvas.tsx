@@ -8,6 +8,8 @@ interface GameCanvasProps {
   onShoot: (ballId: number, vector: Vector, power: number) => void;
   width: number;
   height: number;
+  logicalWidth?: number;
+  logicalHeight?: number;
   disabled?: boolean;
 }
 
@@ -17,14 +19,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   onShoot,
   width,
   height,
+  logicalWidth = 800,
+  logicalHeight = 600,
   disabled = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  // const [dragStart, setDragStart] = useState<Vector | null>(null);
   const [dragCurrent, setDragCurrent] = useState<Vector | null>(null);
   const [selectedBall, setSelectedBall] = useState<Ball | null>(null);
   const [waterOffset, setWaterOffset] = useState(0);
+
+  // Calculate scale to fit logical game into display area
+  const scale = Math.min(width / logicalWidth, height / logicalHeight);
+  const offsetX = (width - logicalWidth * scale) / 2;
+  const offsetY = (height - logicalHeight * scale) / 2;
 
   // Animation loop for water and rendering
   useEffect(() => {
@@ -38,12 +46,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       // Clear
       ctx.clearRect(0, 0, width, height);
 
-      // Translate to center
       ctx.save();
-      ctx.translate(width / 2, height / 2);
+
+      // Apply scaling and centering
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scale, scale);
+
+      // Translate to center of logical game
+      ctx.translate(logicalWidth / 2, logicalHeight / 2);
 
       // Draw Island & Water
-      drawIsland(ctx, width, height, waterOffset);
+      drawIsland(ctx, logicalWidth, logicalHeight, waterOffset);
 
       // Draw Walls
       gameState.walls?.forEach(wall => drawWall(ctx, wall));
@@ -64,7 +77,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     render();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [gameState, isDragging, dragCurrent, selectedBall, width, height, waterOffset]);
+  }, [gameState, isDragging, dragCurrent, selectedBall, width, height, logicalWidth, logicalHeight, scale, offsetX, offsetY, waterOffset]);
 
   const getPos = (e: React.MouseEvent | React.TouchEvent): Vector => {
     const canvas = canvasRef.current;
@@ -73,10 +86,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
 
-    // Map to centered coordinates
+    // Map screen coordinates to logical coordinates
+    // 1. Subtract canvas offset
+    const screenX = clientX - r.left;
+    const screenY = clientY - r.top;
+
+    // 2. Subtract centering offset
+    const relativeX = screenX - offsetX;
+    const relativeY = screenY - offsetY;
+
+    // 3. Unscale
+    const unscaledX = relativeX / scale;
+    const unscaledY = relativeY / scale;
+
+    // 4. Subtract logical center (since game logic uses 0,0 as center)
     return {
-      x: clientX - r.left - width / 2,
-      y: clientY - r.top - height / 2
+      x: unscaledX - logicalWidth / 2,
+      y: unscaledY - logicalHeight / 2
     };
   };
 
@@ -99,7 +125,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     if (clickedBall) {
       setSelectedBall(clickedBall);
       setIsDragging(true);
-      // setDragStart(pos);
       setDragCurrent(pos);
     }
   };
@@ -128,7 +153,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     setIsDragging(false);
     setSelectedBall(null);
-    // setDragStart(null);
     setDragCurrent(null);
   };
 
