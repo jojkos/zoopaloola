@@ -97,7 +97,6 @@ describe('useSupabaseGame', () => {
             console.log('Created game ID:', id);
         });
 
-        console.log('Current gameId:', result.current.gameId);
         console.log('mockChannel calls:', mockChannel.mock.calls.length);
         console.log('mockOn calls:', mockOn.mock.calls.length);
 
