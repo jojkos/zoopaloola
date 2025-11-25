@@ -27,16 +27,32 @@ function App() {
       setMode('online');
     }
 
+    // Check for URL query param (Auto-join)
+    const params = new URLSearchParams(window.location.search);
+    const joinGameId = params.get('gameId');
+    if (joinGameId) {
+      setPendingAction({ type: 'join', gameId: joinGameId });
+      setMode('online');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Initialize audio on first interaction
+  // Initialize audio on first interaction (Touch or Click)
   const initAudio = () => {
     audio.init();
   };
 
   return (
-    <div className="w-full h-screen overflow-hidden bg-slate-900" onClick={initAudio} role="button" tabIndex={0}>
+    <div
+      className="w-full h-screen overflow-hidden bg-slate-900"
+      onClick={initAudio}
+      onTouchStart={initAudio} // Critical for mobile audio
+      role="button"
+      tabIndex={0}
+    >
       {mode === 'menu' && (
         <Lobby
           onCreateGame={async () => {
@@ -99,9 +115,9 @@ const LocalGameWrapper = ({ width, height, onExit }: { width: number, height: nu
       />
       <button
         onClick={onExit}
-        className="absolute top-4 left-4 bg-white/20 hover:bg-white/30 text-white p-2 rounded-full backdrop-blur z-50"
+        className="absolute top-4 left-4 bg-red-500/80 hover:bg-red-600 text-white px-4 py-2 rounded-full backdrop-blur z-50 font-bold shadow-lg transition-transform active:scale-95"
       >
-        🏠
+        LEAVE GAME
       </button>
     </>
   );
@@ -197,7 +213,7 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
   if (!gameState || !playerId) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-white">
-        <div className="text-2xl font-bold mb-4">Načítání hry...</div>
+        <div className="text-2xl font-bold mb-4">Loading game...</div>
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
         <button
           onClick={() => {
@@ -207,7 +223,7 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
           }}
           className="mt-8 text-sm text-slate-400 hover:text-white underline"
         >
-          Zrušit a vrátit se zpět
+          Cancel and return home
         </button>
       </div>
     );
@@ -236,7 +252,7 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
         onClick={handleExit}
         className="absolute top-4 left-4 bg-red-500/80 hover:bg-red-600 text-white px-4 py-2 rounded-full backdrop-blur z-50 font-bold shadow-lg transition-transform active:scale-95"
       >
-        OPUSTIT HRU
+        LEAVE GAME
       </button>
 
       {isSimulating && (

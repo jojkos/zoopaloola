@@ -21,12 +21,12 @@ export class Vec2 implements Vector {
   sub(v: Vector): Vec2 { return new Vec2(this.x - v.x, this.y - v.y); }
   mult(n: number): Vec2 { return new Vec2(this.x * n, this.y * n); }
   mag(): number { return Math.sqrt(this.x * this.x + this.y * this.y); }
-  norm(): Vec2 { 
-    const m = this.mag(); 
-    return m === 0 ? new Vec2(0,0) : this.mult(1/m); 
+  norm(): Vec2 {
+    const m = this.mag();
+    return m === 0 ? new Vec2(0, 0) : this.mult(1 / m);
   }
-  dist(v: Vector): number { 
-    return Math.sqrt(Math.pow(this.x - v.x, 2) + Math.pow(this.y - v.y, 2)); 
+  dist(v: Vector): number {
+    return Math.sqrt(Math.pow(this.x - v.x, 2) + Math.pow(this.y - v.y, 2));
   }
   dot(v: Vector): number { return this.x * v.x + this.y * v.y; }
 }
@@ -37,34 +37,52 @@ export class GameEngine {
   bounds: { width: number; height: number; cx: number; cy: number; rx: number; ry: number };
 
   constructor(width: number, height: number) {
-    const padding = 50;
-    const maxWidth = 800;
-    const w = Math.min(width - padding, maxWidth);
-    const h = Math.min(height - padding, w * 0.7);
-    
-    this.bounds = {
-      width: w,
-      height: h,
-      cx: 0, // Center is always 0,0
-      cy: 0,
-      rx: w / 2,
-      ry: h / 2
-    };
-
-    this.createWalls();
+    // Initialize with dummy values, resize will set them correctly
+    this.bounds = { width, height, cx: 0, cy: 0, rx: 0, ry: 0 };
+    this.resize(width, height);
   }
 
   createWalls() {
     const { cx, cy, rx, ry } = this.bounds;
     const wallThick = 35;
-    const wallLen = rx * 1.1;
+
+    // Gap size (approx ball diameter + margin)
+    // User requested 50% bigger gaps (was 0.08, now 0.12)
+    const gapSize = this.bounds.width * 0.12;
+
+    // Vertical walls (Left/Right) - Solid but shorter to create corner gaps
+    // Length = full height - 2 * gapSize
+    const vWallLen = (ry * 2) - (gapSize * 2);
 
     this.walls = [
-      { pos: { x: cx - rx, y: cy }, w: wallThick, h: wallLen, type: 'vertical' },
-      { pos: { x: cx + rx, y: cy }, w: wallThick, h: wallLen, type: 'vertical' },
-      { pos: { x: cx, y: cy - ry }, w: wallLen * 0.6, h: wallThick, type: 'horizontal' },
-      { pos: { x: cx, y: cy + ry }, w: wallLen * 0.6, h: wallThick, type: 'horizontal' }
+      { pos: { x: cx - rx, y: cy }, w: wallThick, h: vWallLen, type: 'vertical' },
+      { pos: { x: cx + rx, y: cy }, w: wallThick, h: vWallLen, type: 'vertical' },
     ];
+
+    // Horizontal walls (Top/Bottom) - 2 Segments each with middle gap
+    // Total width available for one side = rx * 2
+    // We want gaps at corners (already handled by vertical walls being at x=rx) 
+    // AND gaps between vertical and horizontal walls.
+
+    const cornerGap = gapSize;
+    const middleGap = gapSize;
+    const totalWidth = rx * 2;
+    const segmentWidth = (totalWidth - (2 * cornerGap) - middleGap) / 2;
+
+    // Positions
+    // Left Segment Center: cx - (middleGap/2) - (segmentWidth/2)
+    // Right Segment Center: cx + (middleGap/2) + (segmentWidth/2)
+
+    const leftSegX = cx - (middleGap / 2) - (segmentWidth / 2);
+    const rightSegX = cx + (middleGap / 2) + (segmentWidth / 2);
+
+    // Top Segments
+    this.walls.push({ pos: { x: leftSegX, y: cy - ry }, w: segmentWidth, h: wallThick, type: 'horizontal' });
+    this.walls.push({ pos: { x: rightSegX, y: cy - ry }, w: segmentWidth, h: wallThick, type: 'horizontal' });
+
+    // Bottom Segments
+    this.walls.push({ pos: { x: leftSegX, y: cy + ry }, w: segmentWidth, h: wallThick, type: 'horizontal' });
+    this.walls.push({ pos: { x: rightSegX, y: cy + ry }, w: segmentWidth, h: wallThick, type: 'horizontal' });
   }
 
   initGame(): GameState {
@@ -78,7 +96,7 @@ export class GameEngine {
       const x = this.bounds.cx + Math.cos(angle) * circleR;
       const y = this.bounds.cy + Math.sin(angle) * circleR;
       const p = (i % 2 === 0) ? 1 : 2;
-      
+
       balls.push({
         id: i,
         player: p,
@@ -96,7 +114,7 @@ export class GameEngine {
     balls.push({
       id: 99,
       player: 1,
-      pos: { x: this.bounds.cx - r*1.5, y: this.bounds.cy },
+      pos: { x: this.bounds.cx - r * 1.5, y: this.bounds.cy },
       vel: { x: 0, y: 0 },
       r,
       isDead: false,
@@ -108,7 +126,7 @@ export class GameEngine {
     balls.push({
       id: 100,
       player: 2,
-      pos: { x: this.bounds.cx + r*1.5, y: this.bounds.cy },
+      pos: { x: this.bounds.cx + r * 1.5, y: this.bounds.cy },
       vel: { x: 0, y: 0 },
       r,
       isDead: false,
@@ -149,7 +167,6 @@ export class GameEngine {
   update(state: GameState): { state: GameState, events: GameEvent[] } {
     this.events = [];
     const newState = { ...state, balls: [...state.balls], walls: state.walls };
-    // let moving = false;
 
     // Update balls
     newState.balls.forEach(b => {
@@ -180,9 +197,8 @@ export class GameEngine {
       // Check Bounds
       const { cx, cy, rx, ry } = this.bounds;
       // Stricter bounds check: if center of ball passes the island edge, it dies.
-      // This prevents balls from "floating" or getting stuck in the void.
       if (b.pos.x < cx - rx || b.pos.x > cx + rx ||
-          b.pos.y < cy - ry || b.pos.y > cy + ry) {
+        b.pos.y < cy - ry || b.pos.y > cy + ry) {
         if (!b.isDead) {
           b.isDead = true;
           this.events.push({ type: 'splash', data: b.player });
@@ -199,25 +215,25 @@ export class GameEngine {
   checkWallCollision(ball: Ball, wall: Wall) {
     let testX = ball.pos.x;
     let testY = ball.pos.y;
-    
-    const rx = wall.pos.x - wall.w/2;
-    const ry = wall.pos.y - wall.h/2;
-    
+
+    const rx = wall.pos.x - wall.w / 2;
+    const ry = wall.pos.y - wall.h / 2;
+
     if (ball.pos.x < rx) testX = rx;
     else if (ball.pos.x > rx + wall.w) testX = rx + wall.w;
-    
+
     if (ball.pos.y < ry) testY = ry;
     else if (ball.pos.y > ry + wall.h) testY = ry + wall.h;
-    
+
     const distX = ball.pos.x - testX;
     const distY = ball.pos.y - testY;
-    const distance = Math.sqrt((distX*distX) + (distY*distY));
-    
+    const distance = Math.sqrt((distX * distX) + (distY * distY));
+
     if (distance <= ball.r) {
       const overlap = ball.r - distance;
       let nx = distX / distance;
       let ny = distY / distance;
-      
+
       if (distance === 0) { nx = 1; ny = 0; }
 
       ball.pos.x += nx * overlap;
@@ -229,10 +245,10 @@ export class GameEngine {
       } else {
         n = new Vec2(0, Math.sign(distY));
       }
-      
+
       const v = new Vec2(ball.vel.x, ball.vel.y);
       const vDotN = v.dot(n);
-      
+
       if (vDotN < 0) {
         const newVel = v.sub(n.mult(2 * vDotN)).mult(WALL_BOUNCE);
         ball.vel = newVel;
@@ -243,7 +259,7 @@ export class GameEngine {
 
   checkBallCollisions(balls: Ball[]) {
     // Static resolution
-    for (let k=0; k<2; k++) {
+    for (let k = 0; k < 2; k++) {
       for (let i = 0; i < balls.length; i++) {
         for (let j = i + 1; j < balls.length; j++) {
           const b1 = balls[i];
@@ -260,7 +276,7 @@ export class GameEngine {
             const overlap = minDist - dist;
             const n = distV.norm();
             const correction = n.mult(overlap * 0.51);
-            
+
             b1.pos.x += correction.x;
             b1.pos.y += correction.y;
             b2.pos.x -= correction.x;
@@ -276,7 +292,7 @@ export class GameEngine {
         const b1 = balls[i];
         const b2 = balls[j];
         if (b1.isDead || b2.isDead) continue;
-        
+
         const v1 = new Vec2(b1.pos.x, b1.pos.y);
         const v2 = new Vec2(b2.pos.x, b2.pos.y);
         const dist = v1.dist(v2);
@@ -293,7 +309,7 @@ export class GameEngine {
 
           const impulseScalar = -(1 + BALL_BOUNCE) * speed / 2;
           const impulse = n.mult(impulseScalar);
-          
+
           b1.vel = vel1.add(impulse);
           b2.vel = vel2.sub(impulse);
         }
@@ -304,7 +320,7 @@ export class GameEngine {
   updateScores(state: GameState) {
     state.scores.p1 = state.balls.filter(b => b.player === 1 && !b.isDead).length;
     state.scores.p2 = state.balls.filter(b => b.player === 2 && !b.isDead).length;
-    
+
     if (state.scores.p1 === 0) {
       state.status = 'finished';
       state.winner = 2;

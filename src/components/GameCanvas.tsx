@@ -29,10 +29,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const [selectedBall, setSelectedBall] = useState<Ball | null>(null);
   const [waterOffset, setWaterOffset] = useState(0);
 
+  // Local lock to prevent double-firing before parent updates 'disabled'
+  const processingShot = useRef(false);
+
+  // Reset local lock when disabled prop changes OR turn changes
+  useEffect(() => {
+    if (!disabled) {
+      processingShot.current = false;
+    }
+  }, [disabled, gameState.turn]);
+
   // Calculate scale to fit logical game into display area
-  const scale = Math.min(width / logicalWidth, height / logicalHeight);
+  // Reserve space for top UI (Turn indicator + scores)
+  const TOP_UI_OFFSET = 140; // Approx height of top UI
+  const availableHeight = height - TOP_UI_OFFSET;
+
+  const scale = Math.min(width / logicalWidth, availableHeight / logicalHeight);
+
+  // Center horizontally, but push down vertically by TOP_UI_OFFSET
   const offsetX = (width - logicalWidth * scale) / 2;
-  const offsetY = (height - logicalHeight * scale) / 2;
+  const offsetY = TOP_UI_OFFSET + (availableHeight - logicalHeight * scale) / 2;
 
   // Animation loop for water and rendering
   useEffect(() => {
@@ -79,42 +95,86 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [gameState, isDragging, dragCurrent, selectedBall, width, height, logicalWidth, logicalHeight, scale, offsetX, offsetY, waterOffset]);
 
-  const getPos = (e: React.MouseEvent | React.TouchEvent): Vector => {
+  const getPos = (clientX: number, clientY: number): Vector => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const r = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
 
     // Map screen coordinates to logical coordinates
-    // 1. Subtract canvas offset
     const screenX = clientX - r.left;
     const screenY = clientY - r.top;
-
-    // 2. Subtract centering offset
     const relativeX = screenX - offsetX;
     const relativeY = screenY - offsetY;
-
-    // 3. Unscale
     const unscaledX = relativeX / scale;
     const unscaledY = relativeY / scale;
 
-    // 4. Subtract logical center (since game logic uses 0,0 as center)
     return {
       x: unscaledX - logicalWidth / 2,
       y: unscaledY - logicalHeight / 2
     };
   };
 
+  // Handle Window Events for Dragging
+  useEffect(() => {
+    if (!isDragging || !selectedBall) return;
+
+    const handleWindowMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      setDragCurrent(getPos(clientX, clientY));
+    };
+
+    const handleWindowUp = (e: MouseEvent | TouchEvent) => {
+      // Use the last known dragCurrent if available, or calculate from event
+      // But dragCurrent state might be stale in closure if not careful?
+      // Actually, we can just use the state dragCurrent if we include it in deps.
+      // But better to rely on the event if possible? No, event is mouseup, might be anywhere.
+      // We rely on dragCurrent state.
+
+      if (selectedBall && dragCurrent) {
+        const aimVector = {
+          x: selectedBall.pos.x - dragCurrent.x,
+          y: selectedBall.pos.y - dragCurrent.y
+        };
+        const mag = Math.sqrt(aimVector.x * aimVector.x + aimVector.y * aimVector.y);
+
+        if (mag > 10) {
+          const MAX_POWER = 25;
+          const power = Math.min(mag * 0.15, MAX_POWER);
+          const norm = { x: aimVector.x / mag, y: aimVector.y / mag };
+
+          processingShot.current = true;
+          onShoot(selectedBall.id, { x: norm.x * power, y: norm.y * power }, power);
+        }
+      }
+
+      setIsDragging(false);
+      setSelectedBall(null);
+      setDragCurrent(null);
+    };
+
+    window.addEventListener('mousemove', handleWindowMove);
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+    };
+  }, [isDragging, selectedBall, dragCurrent, onShoot]); // Added dragCurrent to deps
+
   const handleDown = (e: React.MouseEvent | React.TouchEvent) => {
     if (gameState.status !== 'playing') return;
-    if (disabled) return;
-    // Only allow shooting if it's my turn
+    if (disabled || processingShot.current) return;
     if (gameState.turn !== playerId) return;
 
-    const pos = getPos(e);
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    const pos = getPos(clientX, clientY);
 
-    // Find clicked ball
     const clickedBall = gameState.balls.find(b => {
       if (b.isDead || b.player !== playerId) return false;
       const dx = b.pos.x - pos.x;
@@ -129,33 +189,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   };
 
-  const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDragging) return;
-    setDragCurrent(getPos(e));
-  };
-
-  const handleUp = () => {
-    if (!isDragging || !selectedBall || !dragCurrent) return;
-
-    const aimVector = {
-      x: selectedBall.pos.x - dragCurrent.x,
-      y: selectedBall.pos.y - dragCurrent.y
-    };
-    const mag = Math.sqrt(aimVector.x * aimVector.x + aimVector.y * aimVector.y);
-
-    if (mag > 10) {
-      const MAX_POWER = 25;
-      const power = Math.min(mag * 0.15, MAX_POWER);
-      const norm = { x: aimVector.x / mag, y: aimVector.y / mag };
-
-      onShoot(selectedBall.id, { x: norm.x * power, y: norm.y * power }, power);
-    }
-
-    setIsDragging(false);
-    setSelectedBall(null);
-    setDragCurrent(null);
-  };
-
   return (
     <canvas
       ref={canvasRef}
@@ -163,21 +196,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       height={height}
       className="shadow-2xl rounded-lg cursor-pointer touch-none"
       onMouseDown={handleDown}
-      onMouseMove={handleMove}
-      onMouseUp={handleUp}
-      onMouseLeave={handleUp}
       onTouchStart={handleDown}
-      onTouchMove={handleMove}
-      onTouchEnd={handleUp}
     />
   );
 };
 
-// Helper drawing functions (ported from original)
+// Helper drawing functions
 function drawIsland(ctx: CanvasRenderingContext2D, w: number, h: number, offset: number) {
   // Water
   ctx.fillStyle = '#2b6cb0';
-  // Fill relative to center
   ctx.fillRect(-w / 2, -h / 2, w, h);
 
   // Waves
@@ -191,7 +218,7 @@ function drawIsland(ctx: CanvasRenderingContext2D, w: number, h: number, offset:
   }
   ctx.stroke();
 
-  // Island logic (simplified for now, assuming centered)
+  // Island logic
   const padding = 50;
   const maxWidth = 800;
   const islandW = Math.min(w - padding, maxWidth);
@@ -224,13 +251,14 @@ function drawIsland(ctx: CanvasRenderingContext2D, w: number, h: number, offset:
   ctx.font = 'bold 40px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText("ZOO", cx, cy - 20);
-  ctx.fillText("BUMPERS", cx, cy + 25);
+  ctx.fillText("Zoopa", cx, cy - 20);
+  ctx.fillStyle = 'rgba(255,255,0,0.5)';
+  ctx.fillText("LOLa", cx, cy + 25);
 }
 
 function drawWall(ctx: CanvasRenderingContext2D, wall: Wall) {
-  ctx.fillStyle = '#4a5568'; // stone
-  ctx.strokeStyle = '#2d3748'; // stoneDark
+  ctx.fillStyle = '#4a5568';
+  ctx.strokeStyle = '#2d3748';
   ctx.lineWidth = 3;
 
   ctx.beginPath();
@@ -238,7 +266,6 @@ function drawWall(ctx: CanvasRenderingContext2D, wall: Wall) {
   ctx.fill();
   ctx.stroke();
 
-  // Detail
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
   ctx.beginPath();
   ctx.arc(wall.pos.x - wall.w / 4, wall.pos.y - wall.h / 4, 4, 0, Math.PI * 2);
@@ -256,8 +283,7 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
   // Body
   ctx.beginPath();
   ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
-  ctx.fillStyle = ball.player === 1 ? '#1a202c' : '#fefcbf'; // Penguin Black vs Monkey Beige
-  if (ball.player === 2) ctx.fillStyle = '#fefcbf';
+  ctx.fillStyle = ball.player === 1 ? '#1a202c' : '#d69e2e';
   ctx.fill();
 
   // Border
@@ -282,7 +308,6 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
     ctx.fill();
   } else {
     // Monkey details
-    // Face (Heart shape-ish)
     ctx.fillStyle = '#fefcbf';
     ctx.beginPath();
     ctx.arc(-5, -2, 7, 0, Math.PI * 2);
@@ -290,7 +315,6 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
     ctx.ellipse(0, 3, 10, 8, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Ears
     ctx.fillStyle = '#d69e2e';
     ctx.beginPath(); ctx.arc(-13, 0, 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fefcbf';
@@ -301,12 +325,10 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
     ctx.fillStyle = '#fefcbf';
     ctx.beginPath(); ctx.arc(13, 0, 2, 0, Math.PI * 2); ctx.fill();
 
-    // Eyes
     ctx.fillStyle = 'black';
     ctx.beginPath(); ctx.arc(-5, -1, 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(5, -1, 2.5, 0, Math.PI * 2); ctx.fill();
 
-    // Mouth
     ctx.beginPath();
     ctx.arc(0, 5, 4, 0, Math.PI, false);
     ctx.strokeStyle = '#744210';
