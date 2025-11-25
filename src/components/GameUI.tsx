@@ -15,7 +15,7 @@ export const GameUI: React.FC<GameUIProps> = ({ gameState, playerId, onReset }) 
       {/* Top Bar */}
       <div className="flex justify-between w-full max-w-4xl mx-auto items-start pointer-events-auto">
         {/* Player 1 Score */}
-        <div 
+        <div
           className="px-5 py-2 rounded-[15px] border-4 border-slate-800 text-center min-w-[100px]"
           style={{
             background: 'linear-gradient(180deg, #fff 0%, #e2e8f0 100%)',
@@ -27,26 +27,26 @@ export const GameUI: React.FC<GameUIProps> = ({ gameState, playerId, onReset }) 
         </div>
 
         {/* Turn Indicator */}
-        <div 
-          className={`px-8 py-3 rounded-[15px] border-4 text-center min-w-[280px] transition-colors duration-300 ${
-            turn === 1 
-              ? 'border-blue-600 text-blue-700 bg-blue-50' 
-              : 'border-yellow-600 text-yellow-700 bg-yellow-50'
-          }`}
+        <div
+          className={`px-8 py-3 rounded-[15px] border-4 text-center min-w-[280px] transition-all duration-300 transform ${turn === 1
+              ? 'border-blue-600 bg-blue-100 text-blue-800 shadow-[0_0_20px_rgba(37,99,235,0.3)]'
+              : 'border-yellow-600 bg-yellow-100 text-yellow-800 shadow-[0_0_20px_rgba(202,138,4,0.3)]'
+            }`}
           style={{
-            boxShadow: '0 5px 0 #000'
+            boxShadow: turn === 1 ? '0 5px 0 #1e40af' : '0 5px 0 #854d0e',
+            transform: turn === playerId ? 'scale(1.05)' : 'scale(1)'
           }}
         >
-          <div className="text-2xl uppercase tracking-wide">
+          <div className="text-2xl uppercase tracking-wide font-black">
             {turn === 1 ? 'Tah Tučňáků' : 'Tah Opic'}
           </div>
-          <div className="text-sm opacity-75 font-sans font-bold">
-            {turn === playerId ? '(Jsi na řadě)' : '(Čekání na soupeře...)'}
+          <div className={`text-sm font-bold mt-1 ${turn === playerId ? 'animate-pulse' : 'opacity-75'}`}>
+            {turn === playerId ? '👉 JSI NA ŘADĚ! 👈' : '(Čekání na soupeře...)'}
           </div>
         </div>
 
         {/* Player 2 Score */}
-        <div 
+        <div
           className="px-5 py-2 rounded-[15px] border-4 border-slate-800 text-center min-w-[100px]"
           style={{
             background: 'linear-gradient(180deg, #fff 0%, #e2e8f0 100%)',

@@ -17,9 +17,9 @@ function App() {
   useEffect(() => {
     const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
-    
+
     // Check for active session
-    const savedGameId = localStorage.getItem('zoopaloola_game_id');
+    const savedGameId = sessionStorage.getItem('zoopaloola_game_id');
     if (savedGameId) {
       setMode('online');
     }
@@ -53,17 +53,17 @@ function App() {
       )}
 
       {mode === 'local' && (
-        <LocalGameWrapper 
-          width={dimensions.width} 
-          height={dimensions.height} 
-          onExit={() => setMode('menu')} 
+        <LocalGameWrapper
+          width={dimensions.width}
+          height={dimensions.height}
+          onExit={() => setMode('menu')}
         />
       )}
 
       {mode === 'online' && (
-        <OnlineGameWrapper 
-          width={dimensions.width} 
-          height={dimensions.height} 
+        <OnlineGameWrapper
+          width={dimensions.width}
+          height={dimensions.height}
           onExit={() => setMode('menu')}
           initialAction={pendingAction}
         />
@@ -91,7 +91,7 @@ const LocalGameWrapper = ({ width, height, onExit }: { width: number, height: nu
         playerId={gameState.turn}
         onReset={onExit}
       />
-      <button 
+      <button
         onClick={onExit}
         className="absolute top-4 left-4 bg-white/20 hover:bg-white/30 text-white p-2 rounded-full backdrop-blur z-50"
       >
@@ -109,15 +109,16 @@ interface OnlineGameWrapperProps {
 }
 
 const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameWrapperProps) => {
-  const { 
-    gameState, 
-    createGame, 
-    joinGame, 
-    onShoot, 
-    playerId, 
-    status, 
+  const {
+    gameState,
+    createGame,
+    joinGame,
+    onShoot,
+    playerId,
+    status,
     error,
-    isSimulating
+    isSimulating,
+    isProcessingShot
   } = useSupabaseGame(width, height);
 
   const [lobbyState, setLobbyState] = useState<'initial' | 'creating' | 'joining' | 'playing'>('initial');
@@ -134,7 +135,7 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
       }
 
       if (hasInitialized || !initialAction) return;
-      
+
       setHasInitialized(true);
       if (initialAction.type === 'create') {
         await handleCreate();
@@ -164,8 +165,8 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
   };
 
   const handleExit = () => {
-    localStorage.removeItem('zoopaloola_game_id');
-    localStorage.removeItem('zoopaloola_player_id');
+    sessionStorage.removeItem('zoopaloola_game_id');
+    sessionStorage.removeItem('zoopaloola_player_id');
     onExit();
   };
 
@@ -191,10 +192,10 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
       <div className="flex flex-col items-center justify-center h-full text-white">
         <div className="text-2xl font-bold mb-4">Načítání hry...</div>
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
-        <button 
+        <button
           onClick={() => {
-            localStorage.removeItem('zoopaloola_game_id');
-            localStorage.removeItem('zoopaloola_player_id');
+            sessionStorage.removeItem('zoopaloola_game_id');
+            sessionStorage.removeItem('zoopaloola_player_id');
             window.location.reload();
           }}
           className="mt-8 text-sm text-slate-400 hover:text-white underline"
@@ -213,15 +214,16 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
         onShoot={onShoot}
         width={width}
         height={height}
+        disabled={isProcessingShot}
       />
       <GameUI
         gameState={gameState}
         playerId={playerId}
         onReset={handleExit}
       />
-      
+
       {/* Leave Game Button */}
-      <button 
+      <button
         onClick={handleExit}
         className="absolute top-4 left-4 bg-red-500/80 hover:bg-red-600 text-white px-4 py-2 rounded-full backdrop-blur z-50 font-bold shadow-lg transition-transform active:scale-95"
       >
