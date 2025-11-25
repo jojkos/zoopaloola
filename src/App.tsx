@@ -7,12 +7,15 @@ import { useSupabaseGame } from './hooks/useSupabaseGame';
 import { audio } from './services/audio';
 import { supabase } from './services/supabase';
 
+// Fixed logical resolution for consistent physics across devices
+const LOGICAL_WIDTH = 800;
+const LOGICAL_HEIGHT = 600;
+
 function App() {
   const [mode, setMode] = useState<'menu' | 'local' | 'online'>('menu');
   const [pendingAction, setPendingAction] = useState<{ type: 'create' } | { type: 'join', gameId: string } | null>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
 
-  // Handle resize
   // Handle resize
   useEffect(() => {
     const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
@@ -73,7 +76,8 @@ function App() {
 }
 
 const LocalGameWrapper = ({ width, height, onExit }: { width: number, height: number, onExit: () => void }) => {
-  const { gameState, onShoot } = useLocalGame(width, height);
+  // Use logical dimensions for physics
+  const { gameState, onShoot } = useLocalGame(LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
   if (!gameState) return <div>Loading...</div>;
 
@@ -81,10 +85,12 @@ const LocalGameWrapper = ({ width, height, onExit }: { width: number, height: nu
     <>
       <GameCanvas
         gameState={gameState}
-        playerId={gameState.turn} // In local mode, we are always the active player
+        playerId={gameState.turn}
         onShoot={onShoot}
         width={width}
         height={height}
+        logicalWidth={LOGICAL_WIDTH}
+        logicalHeight={LOGICAL_HEIGHT}
       />
       <GameUI
         gameState={gameState}
@@ -109,6 +115,7 @@ interface OnlineGameWrapperProps {
 }
 
 const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameWrapperProps) => {
+  // Use logical dimensions for physics
   const {
     gameState,
     createGame,
@@ -119,7 +126,7 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
     error,
     isSimulating,
     isProcessingShot
-  } = useSupabaseGame(width, height);
+  } = useSupabaseGame(LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
   const [lobbyState, setLobbyState] = useState<'initial' | 'creating' | 'joining' | 'playing'>('initial');
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -214,6 +221,8 @@ const OnlineGameWrapper = ({ width, height, onExit, initialAction }: OnlineGameW
         onShoot={onShoot}
         width={width}
         height={height}
+        logicalWidth={LOGICAL_WIDTH}
+        logicalHeight={LOGICAL_HEIGHT}
         disabled={isProcessingShot}
       />
       <GameUI
