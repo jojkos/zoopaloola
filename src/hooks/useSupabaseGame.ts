@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import type { Vector } from '../game/types';
 import { usePhysics } from './usePhysics';
@@ -8,8 +8,22 @@ export function useSupabaseGame(width: number, height: number) {
   const { gameState, setGameState, shoot, isSimulating } = usePhysics(width, height);
   const [gameId, setGameId] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<1 | 2 | null>(null);
-  const [status, setStatus] = useState<'idle' | 'waiting' | 'playing'>('idle');
+  const [status, setStatus] = useState<'idle' | 'waiting' | 'playing' | 'finished'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [isProcessingShot, setIsProcessingShot] = useState(false);
+
+  // Refs for subscription callbacks to avoid stale closures and re-subscriptions
+  const gameStateRef = useRef(gameState);
+  const isSimulatingRef = useRef(isSimulating);
+  const processedShotsRef = useRef<Set<number>>(new Set()); // Track processed shot timestamps
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
+  useEffect(() => {
+    isSimulatingRef.current = isSimulating;
+  }, [isSimulating]);
 
   // Subscribe to game updates
   useEffect(() => {
@@ -17,62 +31,52 @@ export function useSupabaseGame(width: number, height: number) {
 
     const channel = supabase
       .channel(`game:${gameId}`)
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'games', 
-        filter: `id=eq.${gameId}` 
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'games',
+        filter: `id=eq.${gameId}`
       }, (payload) => {
         const newData = payload.new;
-        
-        // If opponent joined
-        if (status === 'waiting' && newData.status === 'playing') {
-          setStatus('playing');
-        }
 
-        // If we received a new game state
-        if (newData.game_state) {
-          // If it's now our turn, update local state
-          // Or if the game finished
-          if (newData.game_state.turn === playerId || newData.status === 'finished') {
-             setGameState(newData.game_state);
+        // 1. Handle Status Changes
+        if (newData.status && newData.status !== status) {
+          if (status === 'waiting' && newData.status === 'playing') {
+            setStatus('playing');
           }
-          
-          // Also update status if changed
-          if (newData.status) {
-            setStatus(newData.status);
+          if (newData.status === 'finished') {
+            setStatus('finished');
+            setGameState(newData.game_state); // Always sync final state
+            return;
           }
         }
 
-        // Handle opponent shot replay
-        if (newData.last_shot_vector && !isSimulating) {
-          const { ballId, x, y, power } = newData.last_shot_vector;
-          // Check if this ball belongs to opponent
-          // We need to access current state to check ball owner, but we can assume
-          // if we receive a shot vector and it's NOT our turn (or just generally), we should replay it if we haven't yet.
-          // Actually, simpler: if the ball belongs to the player who is NOT us.
-          // But we don't have easy access to ball owner here without looking up in gameState.
-          // Let's rely on the fact that we only send last_shot_vector when we shoot.
-          // So if we receive one, and we didn't just send it...
-          // But we receive our own updates too!
-          // We need to filter out our own shots.
-          // The payload doesn't say who sent it.
-          // But we know `playerId`.
-          // We can check if `current_turn` (from DB) matches `playerId`.
-          // If `current_turn` is US, then the PREVIOUS turn was opponent.
-          // Wait, `last_shot_vector` is updated at the START of the shot.
-          // So `current_turn` is still the shooter.
-          // So if `newData.current_turn` !== `playerId`, it means opponent is shooting.
-          
-          // However, `current_turn` might update LATER in the simulation.
-          // Let's try: if the ball being shot belongs to the opponent.
-          if (gameState) {
-            const ball = gameState.balls.find(b => b.id === ballId);
-            if (ball && ball.player !== playerId) {
-               // It's an opponent's ball. Replay it!
-               shoot(ballId, { x, y }, power);
-            }
+        // 2. Handle New Shots (Event-Driven)
+        if (newData.last_shot_vector) {
+          const { ballId, x, y, power, timestamp, shooterId } = newData.last_shot_vector;
+
+          // If it's a new shot AND not from me (or I am not the one who initiated it)
+          // We check shooterId !== playerId to avoid re-simulating our own shot if the echo comes back
+          if (timestamp && !processedShotsRef.current.has(timestamp) && shooterId !== playerId) {
+            processedShotsRef.current.add(timestamp);
+
+            // Trigger local simulation
+            shoot(ballId, { x, y }, power, (finalState) => {
+              // After simulation, locally switch turn
+              const nextTurn = playerId === 1 ? 2 : 1;
+              // Only update if we are still on the old turn
+              if (finalState.turn !== nextTurn) {
+                setGameState({ ...finalState, turn: nextTurn as 1 | 2 });
+              }
+            });
           }
+        }
+
+        // 3. Handle Game State Sync (Conflict Resolution)
+        // Only sync if we are NOT simulating.
+        // This prevents "snapping" while balls are moving.
+        if (newData.game_state && !isSimulatingRef.current) {
+          setGameState(newData.game_state);
         }
       })
       .subscribe();
@@ -80,13 +84,13 @@ export function useSupabaseGame(width: number, height: number) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [gameId, playerId, status, setGameState]);
+  }, [gameId, playerId, status, shoot, setGameState]); // Removed isSimulating from deps
 
   // Reconnection logic
   useEffect(() => {
-    const savedGameId = localStorage.getItem('zoopaloola_game_id');
-    const savedPlayerId = localStorage.getItem('zoopaloola_player_id');
-    
+    const savedGameId = sessionStorage.getItem('zoopaloola_game_id');
+    const savedPlayerId = sessionStorage.getItem('zoopaloola_player_id');
+
     if (savedGameId && savedPlayerId && !gameId) {
       // Try to reconnect
       const reconnect = async () => {
@@ -103,8 +107,8 @@ export function useSupabaseGame(width: number, height: number) {
           setGameState(game.game_state);
         } else {
           // Invalid or finished game, clear storage
-          localStorage.removeItem('zoopaloola_game_id');
-          localStorage.removeItem('zoopaloola_player_id');
+          sessionStorage.removeItem('zoopaloola_game_id');
+          sessionStorage.removeItem('zoopaloola_player_id');
         }
       };
       reconnect();
@@ -119,30 +123,29 @@ export function useSupabaseGame(width: number, height: number) {
       // Ensure we have a valid initial state
       let initialState = gameState;
       if (!initialState) {
-        // If usePhysics hasn't initialized yet, create a temporary engine to get the state
         const engine = new GameEngine(width, height);
         initialState = engine.initGame();
       }
 
       const { data, error } = await supabase
         .from('games')
-        .insert([{ 
-          player1_id: user.id, 
+        .insert([{
+          player1_id: user.id,
           status: 'waiting',
-          game_state: initialState
+          game_state: initialState,
+          current_turn: 1
         }])
         .select()
         .single();
 
       if (error) throw error;
-      
+
       setGameId(data.id);
       setPlayerId(1);
       setStatus('waiting');
-      
-      // Persist
-      localStorage.setItem('zoopaloola_game_id', data.id);
-      localStorage.setItem('zoopaloola_player_id', '1');
+
+      sessionStorage.setItem('zoopaloola_game_id', data.id);
+      sessionStorage.setItem('zoopaloola_player_id', '1');
 
       return data.id;
     } catch (e: any) {
@@ -156,7 +159,6 @@ export function useSupabaseGame(width: number, height: number) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Check if game exists and is waiting
       const { data: game, error: fetchError } = await supabase
         .from('games')
         .select('*')
@@ -166,12 +168,11 @@ export function useSupabaseGame(width: number, height: number) {
       if (fetchError || !game) throw new Error('Game not found');
       if (game.status !== 'waiting') throw new Error('Game is not available');
 
-      // Join
       const { error: updateError } = await supabase
         .from('games')
-        .update({ 
-          player2_id: user.id, 
-          status: 'playing' 
+        .update({
+          player2_id: user.id,
+          status: 'playing'
         })
         .eq('id', id);
 
@@ -182,9 +183,8 @@ export function useSupabaseGame(width: number, height: number) {
       setStatus('playing');
       setGameState(game.game_state);
 
-      // Persist
-      localStorage.setItem('zoopaloola_game_id', id);
-      localStorage.setItem('zoopaloola_player_id', '2');
+      sessionStorage.setItem('zoopaloola_game_id', id);
+      sessionStorage.setItem('zoopaloola_player_id', '2');
     } catch (e: any) {
       setError(e.message);
     }
@@ -192,38 +192,56 @@ export function useSupabaseGame(width: number, height: number) {
 
   const onShoot = useCallback(async (ballId: number, vector: Vector, power: number) => {
     if (!gameId || !playerId) return;
+    if (gameState?.turn !== playerId) return;
+    if (isProcessingShot) return;
 
-    // 1. Send shot vector to opponent (so they can replay)
-    await supabase
-      .from('games')
-      .update({
-        last_shot_vector: { ballId, x: vector.x, y: vector.y, power }
-      })
-      .eq('id', gameId);
+    try {
+      setIsProcessingShot(true);
+      const timestamp = Date.now();
 
-    // 2. Run local physics
-    shoot(ballId, vector, power, async (finalState) => {
-      // 3. When done, update authoritative state and switch turn
-      const nextTurn = playerId === 1 ? 2 : 1;
-      // We need to map 1/2 to UUIDs? No, `current_turn` in DB is UUID.
-      // Wait, my schema said `current_turn` is UUID.
-      // But my `GameState` uses 1 | 2.
-      // I should map it.
-      // Actually, for simplicity, let's store 1 or 2 in `game_state.turn`.
-      // The DB column `current_turn` might be redundant or used for RLS.
-      // Let's rely on `game_state.turn`.
-      
-      const updatedState = { ...finalState, turn: nextTurn as 1 | 2 };
-      
+      // 1. Broadcast Shot Event
       await supabase
         .from('games')
         .update({
-          game_state: updatedState,
-          current_turn: nextTurn // Update the column too for subscription filter
+          last_shot_vector: {
+            ballId,
+            x: vector.x,
+            y: vector.y,
+            power,
+            timestamp,
+            shooterId: playerId
+          },
+          status: 'playing'
         })
         .eq('id', gameId);
-    });
-  }, [gameId, playerId, shoot]);
+
+      // 2. Run Local Simulation
+      shoot(ballId, vector, power, async (finalState) => {
+        // 3. Authoritative Update
+        const nextTurn = playerId === 1 ? 2 : 1;
+        const updatedState = { ...finalState, turn: nextTurn as 1 | 2 };
+
+        // Update local
+        setGameState(updatedState);
+
+        // Upload to server
+        const { error } = await supabase
+          .from('games')
+          .update({
+            game_state: updatedState,
+            current_turn: nextTurn
+          })
+          .eq('id', gameId);
+
+        if (error) console.error('Error uploading state:', error);
+
+        setIsProcessingShot(false);
+      });
+    } catch (e) {
+      console.error('Error in onShoot:', e);
+      setIsProcessingShot(false);
+    }
+  }, [gameId, playerId, shoot, gameState?.turn, isProcessingShot]);
 
   return {
     gameState,
@@ -233,6 +251,7 @@ export function useSupabaseGame(width: number, height: number) {
     playerId,
     status,
     error,
-    isSimulating
+    isSimulating,
+    isProcessingShot
   };
 }

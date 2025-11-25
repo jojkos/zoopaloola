@@ -8,14 +8,16 @@ interface GameCanvasProps {
   onShoot: (ballId: number, vector: Vector, power: number) => void;
   width: number;
   height: number;
+  disabled?: boolean;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ 
-  gameState, 
-  playerId, 
+export const GameCanvas: React.FC<GameCanvasProps> = ({
+  gameState,
+  playerId,
   onShoot,
   width,
-  height 
+  height,
+  disabled = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -70,27 +72,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const r = canvas.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    
+
     // Map to centered coordinates
-    return { 
-      x: clientX - r.left - width / 2, 
-      y: clientY - r.top - height / 2 
+    return {
+      x: clientX - r.left - width / 2,
+      y: clientY - r.top - height / 2
     };
   };
 
   const handleDown = (e: React.MouseEvent | React.TouchEvent) => {
     if (gameState.status !== 'playing') return;
+    if (disabled) return;
     // Only allow shooting if it's my turn
     if (gameState.turn !== playerId) return;
 
     const pos = getPos(e);
-    
+
     // Find clicked ball
     const clickedBall = gameState.balls.find(b => {
       if (b.isDead || b.player !== playerId) return false;
       const dx = b.pos.x - pos.x;
       const dy = b.pos.y - pos.y;
-      return Math.sqrt(dx*dx + dy*dy) < b.r * 1.5;
+      return Math.sqrt(dx * dx + dy * dy) < b.r * 1.5;
     });
 
     if (clickedBall) {
@@ -109,9 +112,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const handleUp = () => {
     if (!isDragging || !selectedBall || !dragCurrent) return;
 
-    const aimVector = { 
-      x: selectedBall.pos.x - dragCurrent.x, 
-      y: selectedBall.pos.y - dragCurrent.y 
+    const aimVector = {
+      x: selectedBall.pos.x - dragCurrent.x,
+      y: selectedBall.pos.y - dragCurrent.y
     };
     const mag = Math.sqrt(aimVector.x * aimVector.x + aimVector.y * aimVector.y);
 
@@ -119,7 +122,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const MAX_POWER = 25;
       const power = Math.min(mag * 0.15, MAX_POWER);
       const norm = { x: aimVector.x / mag, y: aimVector.y / mag };
-      
+
       onShoot(selectedBall.id, { x: norm.x * power, y: norm.y * power }, power);
     }
 
@@ -151,16 +154,16 @@ function drawIsland(ctx: CanvasRenderingContext2D, w: number, h: number, offset:
   // Water
   ctx.fillStyle = '#2b6cb0';
   // Fill relative to center
-  ctx.fillRect(-w/2, -h/2, w, h);
-  
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+
   // Waves
   ctx.strokeStyle = '#4299e1';
   ctx.lineWidth = 3;
   ctx.beginPath();
-  for (let y = -h/2; y < h/2; y += 50) {
+  for (let y = -h / 2; y < h / 2; y += 50) {
     const shift = Math.sin((y + offset) * 0.04) * 25;
-    ctx.moveTo(-w/2, y);
-    ctx.lineTo(w/2, y + shift);
+    ctx.moveTo(-w / 2, y);
+    ctx.lineTo(w / 2, y + shift);
   }
   ctx.stroke();
 
@@ -177,19 +180,19 @@ function drawIsland(ctx: CanvasRenderingContext2D, w: number, h: number, offset:
   // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.beginPath();
-  ctx.roundRect(cx - rx, cy - ry + 20, rx*2, ry*2, 40);
+  ctx.roundRect(cx - rx, cy - ry + 20, rx * 2, ry * 2, 40);
   ctx.fill();
 
   // Side
   ctx.fillStyle = '#90cdf4';
   ctx.beginPath();
-  ctx.roundRect(cx - rx, cy - ry, rx*2, ry*2, 40);
+  ctx.roundRect(cx - rx, cy - ry, rx * 2, ry * 2, 40);
   ctx.fill();
 
   // Top
   ctx.fillStyle = '#c3ddfd';
   ctx.beginPath();
-  ctx.roundRect(cx - rx + 10, cy - ry + 10, rx*2 - 20, ry*2 - 20, 30);
+  ctx.roundRect(cx - rx + 10, cy - ry + 10, rx * 2 - 20, ry * 2 - 20, 30);
   ctx.fill();
 
   // Logo
@@ -205,16 +208,16 @@ function drawWall(ctx: CanvasRenderingContext2D, wall: Wall) {
   ctx.fillStyle = '#4a5568'; // stone
   ctx.strokeStyle = '#2d3748'; // stoneDark
   ctx.lineWidth = 3;
-  
+
   ctx.beginPath();
-  ctx.roundRect(wall.pos.x - wall.w/2, wall.pos.y - wall.h/2, wall.w, wall.h, 8);
+  ctx.roundRect(wall.pos.x - wall.w / 2, wall.pos.y - wall.h / 2, wall.w, wall.h, 8);
   ctx.fill();
   ctx.stroke();
-  
+
   // Detail
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
   ctx.beginPath();
-  ctx.arc(wall.pos.x - wall.w/4, wall.pos.y - wall.h/4, 4, 0, Math.PI*2);
+  ctx.arc(wall.pos.x - wall.w / 4, wall.pos.y - wall.h / 4, 4, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -230,7 +233,7 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
   ctx.beginPath();
   ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
   ctx.fillStyle = ball.player === 1 ? '#1a202c' : '#fefcbf'; // Penguin Black vs Monkey Beige
-  if (ball.player === 2) ctx.fillStyle = '#fefcbf'; 
+  if (ball.player === 2) ctx.fillStyle = '#fefcbf';
   ctx.fill();
 
   // Border
@@ -242,12 +245,12 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
     // Penguin details
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.ellipse(0, 3, ball.r * 0.7, ball.r * 0.6, 0, 0, Math.PI*2);
+    ctx.ellipse(0, 3, ball.r * 0.7, ball.r * 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
-    
+
     ctx.fillStyle = 'black';
-    ctx.beginPath(); ctx.arc(-5, -6, 3, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(5, -6, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-5, -6, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, -6, 3, 0, Math.PI * 2); ctx.fill();
 
     ctx.fillStyle = '#ed8936';
     ctx.beginPath();
@@ -256,28 +259,28 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
   } else {
     // Monkey details
     // Face (Heart shape-ish)
-    ctx.fillStyle = '#fefcbf'; 
+    ctx.fillStyle = '#fefcbf';
     ctx.beginPath();
-    ctx.arc(-5, -2, 7, 0, Math.PI*2);
-    ctx.arc(5, -2, 7, 0, Math.PI*2);
-    ctx.ellipse(0, 3, 10, 8, 0, 0, Math.PI*2);
+    ctx.arc(-5, -2, 7, 0, Math.PI * 2);
+    ctx.arc(5, -2, 7, 0, Math.PI * 2);
+    ctx.ellipse(0, 3, 10, 8, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Ears
     ctx.fillStyle = '#d69e2e';
-    ctx.beginPath(); ctx.arc(-13, 0, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-13, 0, 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fefcbf';
-    ctx.beginPath(); ctx.arc(-13, 0, 2, 0, Math.PI*2); ctx.fill();
-    
+    ctx.beginPath(); ctx.arc(-13, 0, 2, 0, Math.PI * 2); ctx.fill();
+
     ctx.fillStyle = '#d69e2e';
-    ctx.beginPath(); ctx.arc(13, 0, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(13, 0, 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fefcbf';
-    ctx.beginPath(); ctx.arc(13, 0, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(13, 0, 2, 0, Math.PI * 2); ctx.fill();
 
     // Eyes
     ctx.fillStyle = 'black';
-    ctx.beginPath(); ctx.arc(-5, -1, 2.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(5, -1, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-5, -1, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, -1, 2.5, 0, Math.PI * 2); ctx.fill();
 
     // Mouth
     ctx.beginPath();

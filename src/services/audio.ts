@@ -1,10 +1,10 @@
 // Audio System
 const SOUND_URLS = {
-  splash: "https://actions.google.com/sounds/v1/water/splash_medium.ogg",
+  splash: "https://actions.google.com/sounds/v1/cartoon/pop.ogg",
   monkey: "https://actions.google.com/sounds/v1/animals/monkey_screech.ogg",
-  funny_fail: "https://actions.google.com/sounds/v1/cartoon/slide_whistle.ogg", 
+  funny_fail: "https://actions.google.com/sounds/v1/cartoon/slide_whistle.ogg",
   win: "https://actions.google.com/sounds/v1/cartoon/clown_horn.ogg",
-  pop: "https://actions.google.com/sounds/v1/cartoon/pop_cork.ogg"
+  pop: "https://actions.google.com/sounds/v1/cartoon/pop.ogg"
 };
 
 class AudioService {
@@ -35,7 +35,7 @@ class AudioService {
 
   play(key: keyof typeof SOUND_URLS, volume = 0.5) {
     if (!this.enabled || !this.ctx || !this.buffers[key]) return;
-    
+
     const source = this.ctx.createBufferSource();
     source.buffer = this.buffers[key];
     const gain = this.ctx.createGain();
@@ -50,7 +50,7 @@ class AudioService {
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    
+
     osc.connect(gain);
     gain.connect(this.ctx.destination);
 
