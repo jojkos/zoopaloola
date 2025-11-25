@@ -124,7 +124,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       setDragCurrent(getPos(clientX, clientY));
     };
 
-    const handleWindowUp = (e: MouseEvent | TouchEvent) => {
+    const handleWindowUp = () => {
       // Use the last known dragCurrent if available, or calculate from event
       // But dragCurrent state might be stale in closure if not careful?
       // Actually, we can just use the state dragCurrent if we include it in deps.
