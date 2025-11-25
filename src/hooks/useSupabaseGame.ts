@@ -14,16 +14,12 @@ export function useSupabaseGame(width: number, height: number) {
 
   // Refs for subscription callbacks to avoid stale closures and re-subscriptions
   const gameStateRef = useRef(gameState);
-  const isSimulatingRef = useRef(isSimulating);
+  // isSimulating is now a Ref from usePhysics, so we don't need a local ref for it
   const processedShotsRef = useRef<Set<number>>(new Set()); // Track processed shot timestamps
 
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
-
-  useEffect(() => {
-    isSimulatingRef.current = isSimulating;
-  }, [isSimulating]);
 
   // Subscribe to game updates
   useEffect(() => {
@@ -75,7 +71,8 @@ export function useSupabaseGame(width: number, height: number) {
         // 3. Handle Game State Sync (Conflict Resolution)
         // Only sync if we are NOT simulating.
         // This prevents "snapping" while balls are moving.
-        if (newData.game_state && !isSimulatingRef.current) {
+        // Use the Ref directly to get the live value
+        if (newData.game_state && !isSimulating.current) {
           setGameState(newData.game_state);
         }
       })
@@ -84,7 +81,7 @@ export function useSupabaseGame(width: number, height: number) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [gameId, playerId, status, shoot, setGameState]); // Removed isSimulating from deps
+  }, [gameId, playerId, status, shoot, setGameState, isSimulating]); // Added isSimulating (ref) to deps
 
   // Reconnection logic
   useEffect(() => {
@@ -251,7 +248,7 @@ export function useSupabaseGame(width: number, height: number) {
     playerId,
     status,
     error,
-    isSimulating,
+    isSimulating: isSimulating.current, // Return boolean value for UI
     isProcessingShot
   };
 }

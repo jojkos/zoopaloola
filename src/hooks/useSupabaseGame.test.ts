@@ -62,7 +62,7 @@ vi.mock('./usePhysics', () => ({
         gameState: { turn: 1, balls: [] },
         setGameState: mockSetGameState,
         shoot: mockShoot,
-        isSimulating: simulationState.isSimulating,
+        isSimulating: { get current() { return simulationState.isSimulating; } },
     })
 }));
 
