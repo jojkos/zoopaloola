@@ -29,6 +29,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const [selectedBall, setSelectedBall] = useState<Ball | null>(null);
   const [waterOffset, setWaterOffset] = useState(0);
 
+  // Load images
+  const monkeyImg = useRef<HTMLImageElement>(new Image());
+  const penguinImg = useRef<HTMLImageElement>(new Image());
+
+  useEffect(() => {
+    monkeyImg.current.src = '/images/monkey.png';
+    penguinImg.current.src = '/images/penguin.png';
+  }, []);
+
   // Local lock to prevent double-firing before parent updates 'disabled'
   const processingShot = useRef(false);
 
@@ -78,7 +87,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       gameState.walls?.forEach(wall => drawWall(ctx, wall));
 
       // Draw Balls
-      gameState.balls.forEach(ball => drawBall(ctx, ball, selectedBall?.id === ball.id));
+      gameState.balls.forEach(ball => drawBall(ctx, ball, selectedBall?.id === ball.id, monkeyImg.current, penguinImg.current));
 
       // Draw Aim
       if (isDragging && selectedBall && dragCurrent) {
@@ -189,11 +198,31 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   };
 
+  // Handle DPI scaling
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    
+    // Set actual size in memory (scaled to account for extra pixel density)
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+
+    // Normalize coordinate system to use css pixels
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.scale(dpr, dpr);
+    }
+
+    // Force re-render
+    setWaterOffset(prev => prev + 0.0001); 
+  }, [width, height]);
+
   return (
     <canvas
       ref={canvasRef}
-      width={width}
-      height={height}
+      style={{ width: `${width}px`, height: `${height}px` }}
       className="shadow-2xl rounded-lg cursor-pointer touch-none"
       onMouseDown={handleDown}
       onTouchStart={handleDown}
@@ -272,7 +301,7 @@ function drawWall(ctx: CanvasRenderingContext2D, wall: Wall) {
   ctx.fill();
 }
 
-function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean) {
+function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean, monkeyImg: HTMLImageElement, penguinImg: HTMLImageElement) {
   if (ball.scale <= 0) return;
 
   ctx.save();
@@ -280,61 +309,29 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, isSelected: boolean
   ctx.scale(ball.scale, ball.scale);
   ctx.rotate(ball.rotation * 0.15);
 
-  // Body
-  ctx.beginPath();
-  ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
-  ctx.fillStyle = ball.player === 1 ? '#1a202c' : '#d69e2e';
-  ctx.fill();
+  // Draw Image if loaded
+  const img = ball.player === 1 ? penguinImg : monkeyImg;
+
+  if (img.complete && img.naturalWidth > 0) {
+    // Draw image clipped to circle
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, -ball.r, -ball.r, ball.r * 2, ball.r * 2);
+  } else {
+    // Fallback: Body
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = ball.player === 1 ? '#1a202c' : '#d69e2e';
+    ctx.fill();
+  }
 
   // Border
+  ctx.beginPath();
+  ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 2;
   ctx.stroke();
-
-  if (ball.player === 1) {
-    // Penguin details
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.ellipse(0, 3, ball.r * 0.7, ball.r * 0.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = 'black';
-    ctx.beginPath(); ctx.arc(-5, -6, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(5, -6, 3, 0, Math.PI * 2); ctx.fill();
-
-    ctx.fillStyle = '#ed8936';
-    ctx.beginPath();
-    ctx.moveTo(-4, 0); ctx.lineTo(4, 0); ctx.lineTo(0, 6);
-    ctx.fill();
-  } else {
-    // Monkey details
-    ctx.fillStyle = '#fefcbf';
-    ctx.beginPath();
-    ctx.arc(-5, -2, 7, 0, Math.PI * 2);
-    ctx.arc(5, -2, 7, 0, Math.PI * 2);
-    ctx.ellipse(0, 3, 10, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#d69e2e';
-    ctx.beginPath(); ctx.arc(-13, 0, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fefcbf';
-    ctx.beginPath(); ctx.arc(-13, 0, 2, 0, Math.PI * 2); ctx.fill();
-
-    ctx.fillStyle = '#d69e2e';
-    ctx.beginPath(); ctx.arc(13, 0, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fefcbf';
-    ctx.beginPath(); ctx.arc(13, 0, 2, 0, Math.PI * 2); ctx.fill();
-
-    ctx.fillStyle = 'black';
-    ctx.beginPath(); ctx.arc(-5, -1, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(5, -1, 2.5, 0, Math.PI * 2); ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(0, 5, 4, 0, Math.PI, false);
-    ctx.strokeStyle = '#744210';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
 
   if (isSelected) {
     ctx.beginPath();
