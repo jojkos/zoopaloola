@@ -164,6 +164,15 @@ export const Lobby: React.FC<LobbyProps> = ({
           </div>
         )}
       </div>
+
+      <a
+        href="https://buymeacoffee.com/jojkos"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="beer-link"
+      >
+        🍺 Buy Me a Beer
+      </a>
     </div>
   );
 };
