@@ -59,7 +59,7 @@ export function useSupabaseGame(width: number, height: number) {
             // Trigger local simulation
             shoot(ballId, { x, y }, power, (finalState) => {
               // After simulation, locally switch turn
-              const nextTurn = playerId === 1 ? 2 : 1;
+              const nextTurn = shooterId === 1 ? 2 : 1;
               // Only update if we are still on the old turn
               if (finalState.turn !== nextTurn) {
                 setGameState({ ...finalState, turn: nextTurn as 1 | 2 });

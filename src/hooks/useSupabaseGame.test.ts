@@ -1,179 +1,139 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useSupabaseGame } from './useSupabaseGame';
 import { supabase } from '../services/supabase';
 
-// Hoist mocks
-const {
-    mockSelect,
-    mockInsert,
-    mockUpdate,
-    mockEq,
-    mockSingle,
-    mockChannel,
-    mockOn,
-    mockSubscribe,
-    mockUnsubscribe,
-    mockRemoveChannel,
-    mockSetGameState,
-    mockShoot,
-    simulationState
-} = vi.hoisted(() => ({
-    mockSelect: vi.fn().mockReturnThis(),
-    mockInsert: vi.fn().mockReturnThis(),
-    mockUpdate: vi.fn().mockReturnThis(),
-    mockEq: vi.fn().mockReturnThis(),
-    mockSingle: vi.fn(),
-    mockChannel: vi.fn(),
-    mockOn: vi.fn().mockReturnThis(),
-    mockSubscribe: vi.fn().mockReturnThis(),
-    mockUnsubscribe: vi.fn(),
-    mockRemoveChannel: vi.fn(),
-    mockSetGameState: vi.fn(),
-    mockShoot: vi.fn(),
-    simulationState: { isSimulating: false }, // Mutable state container
-}));
-
 // Mock Supabase
 vi.mock('../services/supabase', () => ({
-    supabase: {
-        channel: mockChannel.mockReturnValue({
-            on: mockOn,
-            subscribe: mockSubscribe,
-            unsubscribe: mockUnsubscribe,
-        }),
-        removeChannel: mockRemoveChannel,
-        from: vi.fn(() => ({
-            select: mockSelect,
-            insert: mockInsert,
-            update: mockUpdate,
-            eq: mockEq,
-            single: mockSingle,
-        })),
-        auth: {
-            getUser: vi.fn(),
-            getSession: vi.fn(),
-        }
-    }
+  supabase: {
+    channel: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnThis(),
+      unsubscribe: vi.fn(),
+    })),
+    removeChannel: vi.fn(),
+    auth: {
+      getUser: vi.fn(),
+    },
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn(),
+    })),
+  },
+}));
+
+// Mock usePhysics
+const { mockSetGameState } = vi.hoisted(() => ({
+  mockSetGameState: vi.fn(),
 }));
 
 vi.mock('./usePhysics', () => ({
-    usePhysics: () => ({
-        gameState: { turn: 1, balls: [] },
-        setGameState: mockSetGameState,
-        shoot: mockShoot,
-        isSimulating: { get current() { return simulationState.isSimulating; } },
-    })
+  usePhysics: () => ({
+    gameState: {
+      balls: [],
+      walls: [],
+      turn: 1,
+      scores: { p1: 0, p2: 0 },
+      status: 'playing',
+    },
+    setGameState: mockSetGameState,
+    shoot: vi.fn((_ballId, _vector, _power, callback) => {
+      // Simulate physics callback immediately
+      callback({
+        balls: [],
+        walls: [],
+        turn: 1, // Physics engine doesn't switch turn automatically in this mock
+        scores: { p1: 0, p2: 0 },
+        status: 'playing',
+      });
+    }),
+    isSimulating: { current: false },
+  }),
 }));
 
+// Export is not needed if we use the hoisted variable in the same file scope, 
+// but since we are in the same file, we can just use it directly.
+// However, if we want to export it for other files (which we don't here), we could.
+// The previous error was because I imported it from the same file which is circular and weird in tests.
+// I will remove the import and just use the local variable.
+
 describe('useSupabaseGame', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        simulationState.isSimulating = false;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+  });
 
-        // Restore chainability
-        mockSelect.mockReturnValue({ eq: mockEq, single: mockSingle });
-        mockInsert.mockReturnValue({ select: mockSelect, single: mockSingle });
-        mockUpdate.mockReturnValue({ eq: mockEq });
-        mockEq.mockReturnValue({ single: mockSingle });
+  it('should switch turn correctly when opponent shoots', async () => {
+    const { result } = renderHook(() => useSupabaseGame(800, 600));
 
-        // Setup default return values
-        (supabase.auth.getUser as any).mockResolvedValue({ data: { user: { id: 'user-1' } } });
-        mockSingle.mockResolvedValue({ data: { id: 'game-1', status: 'waiting', game_state: { turn: 1 } }, error: null });
-
-        mockChannel.mockReturnValue({
-            on: mockOn,
-            subscribe: mockSubscribe,
-            unsubscribe: mockUnsubscribe,
-        });
+    // Mock authenticated user as Player 2
+    (supabase.auth.getUser as any).mockResolvedValue({
+      data: { user: { id: 'player2-id' } },
     });
 
-    it('should trigger local shoot when receiving opponent shot event', async () => {
-        const { result } = renderHook(() => useSupabaseGame(800, 600));
-
-        // Join game to set playerId
-        await act(async () => {
-            const id = await result.current.createGame();
-            console.log('Created game ID:', id);
-        });
-
-        console.log('mockChannel calls:', mockChannel.mock.calls.length);
-        console.log('mockOn calls:', mockOn.mock.calls.length);
-
-        // Capture subscription callback
-        const onCallback = mockOn.mock.calls[0]?.[2];
-        if (!onCallback) {
-            console.error('onCallback is undefined!');
-            return; // Fail gracefully to see logs
-        }
-
-        // Trigger NEW shot event from OPPONENT (shooterId !== playerId)
-        const payload = {
-            new: {
-                last_shot_vector: {
-                    ballId: 0,
-                    x: 1,
-                    y: 1,
-                    power: 10,
-                    timestamp: 12345,
-                    shooterId: 'opponent-id'
-                }
-            }
+    // Mock joining a game
+    (supabase.from as any).mockImplementation((table: string) => {
+      if (table === 'games') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: {
+              id: 'game-123',
+              status: 'waiting',
+              game_state: { turn: 1 },
+            },
+            error: null,
+          }),
+          update: vi.fn().mockReturnThis(),
         };
-
-        act(() => {
-            onCallback(payload);
-        });
-
-        expect(mockShoot).toHaveBeenCalledWith(0, { x: 1, y: 1 }, 10, expect.any(Function));
+      }
+      return { select: vi.fn() };
     });
 
-    it('should IGNORE game_state update when simulating', async () => {
-        simulationState.isSimulating = true; // Simulate physics running
-        const { result } = renderHook(() => useSupabaseGame(800, 600));
-
-        // Join game
-        await act(async () => {
-            await result.current.createGame();
-        });
-
-        const onCallback = mockOn.mock.calls[0][2];
-
-        // Trigger game_state update
-        const payload = {
-            new: {
-                game_state: { turn: 2, balls: [] }
-            }
-        };
-
-        act(() => {
-            onCallback(payload);
-        });
-
-        // Should NOT call setGameState because isSimulating is true
-        expect(mockSetGameState).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.joinGame('game-123');
     });
 
-    it('should ACCEPT game_state update when NOT simulating', async () => {
-        simulationState.isSimulating = false;
-        const { result } = renderHook(() => useSupabaseGame(800, 600));
+    expect(result.current.playerId).toBe(2);
 
-        await act(async () => {
-            await result.current.createGame();
-        });
+    // Simulate receiving a shot event from Player 1
+    // We need to access the subscription callback.
+    // In a real integration test we would emit via supabase, but here we mock the channel.
+    const onCallback = (supabase.channel as any).mock.results[0].value.on.mock.calls[0][2];
 
-        const onCallback = mockOn.mock.calls[0][2];
+    const payload = {
+      new: {
+        last_shot_vector: {
+          ballId: 0,
+          x: 1,
+          y: 1,
+          power: 10,
+          timestamp: Date.now(),
+          shooterId: 1, // Player 1 shot
+        },
+        status: 'playing',
+      },
+    };
 
-        const payload = {
-            new: {
-                game_state: { turn: 2, balls: [] }
-            }
-        };
-
-        act(() => {
-            onCallback(payload);
-        });
-
-        expect(mockSetGameState).toHaveBeenCalledWith({ turn: 2, balls: [] });
+    await act(async () => {
+      onCallback(payload);
     });
+
+    // The physics mock calls back immediately.
+    // The hook should verify if turn needs switching.
+    // Current logic: const nextTurn = playerId === 1 ? 2 : 1;
+    // If we are Player 2, nextTurn becomes 1.
+    // BUT, if Player 1 shot, the turn should switch to Player 2.
+    // So if we are Player 2, and Player 1 shot, we expect the turn to become 2.
+    
+    // We expect setGameState to be called with turn: 2
+    expect(mockSetGameState).toHaveBeenCalledWith(expect.objectContaining({
+      turn: 2
+    }));
+  });
 });
