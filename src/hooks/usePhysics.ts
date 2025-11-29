@@ -42,7 +42,6 @@ export function usePhysics(width: number, height: number) {
           else audio.play('funny_fail');
         }, 200);
       }
-      else if (e.type === 'win') audio.play('win');
     });
 
     setGameState(newState);
